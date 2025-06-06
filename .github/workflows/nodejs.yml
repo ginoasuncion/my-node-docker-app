@@ -1,4 +1,4 @@
-name: CI - Test, Docker Push, and Deploy via SCP
+name: CI - Test, Docker Push, Deploy to Target and Kubernetes
 
 on:
   push:
@@ -35,22 +35,27 @@ jobs:
     - name: Push Docker image to Docker Hub
       run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/my-node-app:latest
 
-    - name: Copy deploy.sh to target server via SCP
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.TARGET_HOST }}
-        username: ${{ secrets.TARGET_USER }}
-        key: ${{ secrets.TARGET_SSH_KEY }}
-        port: 22
-        source: "deploy.sh"
-        target: "~/my-node-app"
-
-    - name: Execute deploy.sh on remote server via SSH
+    - name: Deploy container to target server via SSH
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.TARGET_HOST }}
         username: ${{ secrets.TARGET_USER }}
         key: ${{ secrets.TARGET_SSH_KEY }}
         script: |
-          chmod +x ~/my-node-app/deploy.sh
-          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ~/my-node-app/deploy.sh
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/my-node-app:latest
+          docker stop my-node-app || true
+          docker rm my-node-app || true
+          docker run -d --name my-node-app -p 4444:4444 ${{ secrets.DOCKERHUB_USERNAME }}/my-node-app:latest
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Deploy to Kubernetes
+      env:
+        KUBECONFIG_FILE: ${{ secrets.KUBECONFIG_CONTENT }}
+      run: |
+        echo "$KUBECONFIG_FILE" > kubeconfig.yaml
+        export KUBECONFIG=$(pwd)/kubeconfig.yaml
+        kubectl apply -f k8s-deployment.yaml
