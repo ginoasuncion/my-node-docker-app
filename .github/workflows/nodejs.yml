@@ -1,11 +1,11 @@
-name: CI - Test and Docker Push
+name: CI - Test, Docker Push, and Deploy via SCP
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  test-and-deploy:
+  test-build-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,3 +35,22 @@ jobs:
     - name: Push Docker image to Docker Hub
       run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/my-node-app:latest
 
+    - name: Copy deploy.sh to target server via SCP
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.TARGET_HOST }}
+        username: ${{ secrets.TARGET_USER }}
+        key: ${{ secrets.TARGET_SSH_KEY }}
+        port: 22
+        source: "deploy.sh"
+        target: "~/my-node-app"
+
+    - name: Execute deploy.sh on remote server via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.TARGET_HOST }}
+        username: ${{ secrets.TARGET_USER }}
+        key: ${{ secrets.TARGET_SSH_KEY }}
+        script: |
+          chmod +x ~/my-node-app/deploy.sh
+          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ~/my-node-app/deploy.sh
